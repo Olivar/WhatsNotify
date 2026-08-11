@@ -7,8 +7,10 @@ WhatsNotify encaminha alertas do WhatsApp, executa automações agendadas e exp�
 No Ubuntu/Debian, execute como root:
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/Olivar/WhatsNotify/main/whatsnotify.sh) install
+curl -fsSL https://raw.githubusercontent.com/Olivar/WhatsNotify/main/whatsnotify.sh -o /tmp/whatsnotify.sh && chmod +x /tmp/whatsnotify.sh && /tmp/whatsnotify.sh install
 ```
+
+Não use `bash <(curl ...)`: process substitution expõe o script via `/dev/fd`/`/proc/.../fd` e impede a autodetecção confiável do diretório do bootstrap.
 
 O mesmo comando detecta automaticamente uma instalação legada em `/opt/whatsapp-forwarder` e migra:
 
