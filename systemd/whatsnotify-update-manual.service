@@ -9,4 +9,4 @@ User=root
 Group=root
 WorkingDirectory=/opt/WhatsNotify
 EnvironmentFile=/etc/whatsnotify/whatsnotify.env
-ExecStart=/opt/WhatsNotify/update.sh
+ExecStart=/opt/WhatsNotify/whatsnotify.sh update
