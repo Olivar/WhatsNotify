@@ -7,6 +7,7 @@ if [[ $EUID -ne 0 ]]; then
 fi
 
 APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+INSTALL_NO_START="${INSTALL_NO_START:-false}"
 [[ "$APP_DIR" == "/opt/WhatsNotify" ]] || echo "NOTICE: recommended clone path is /opt/WhatsNotify (current: $APP_DIR)"
 
 command -v git >/dev/null || { echo "git is required"; exit 2; }
@@ -55,7 +56,7 @@ chown -R whatsnotify:whatsnotify "$PUPPETEER_CACHE_DIR"
 
 chown -R root:whatsnotify "$APP_DIR"
 find "$APP_DIR" -type d -exec chmod 0755 {} +
-chmod +x install.sh update.sh scripts/*.sh
+chmod +x install.sh update.sh scripts/*.sh migrate-from-legacy.sh 2>/dev/null || true
 
 sed "s#WorkingDirectory=/opt/WhatsNotify#WorkingDirectory=$APP_DIR#; s#/opt/WhatsNotify/index.js#$APP_DIR/index.js#" systemd/whatsnotify.service > /etc/systemd/system/whatsnotify.service
 sed "s#WorkingDirectory=/opt/WhatsNotify#WorkingDirectory=$APP_DIR#; s#/opt/WhatsNotify/update.sh#$APP_DIR/update.sh#" systemd/whatsnotify-update.service > /etc/systemd/system/whatsnotify-update.service
@@ -66,12 +67,17 @@ chmod 0440 /etc/sudoers.d/whatsnotify-update
 
 systemctl daemon-reload
 systemctl enable whatsnotify.service
-systemctl enable --now whatsnotify-update.timer
-systemctl restart whatsnotify.service || true
 
-sleep 2
-systemctl --no-pager --full status whatsnotify.service || true
-systemctl --no-pager list-timers whatsnotify-update.timer || true
+if [[ "$INSTALL_NO_START" == "true" ]]; then
+  systemctl disable --now whatsnotify-update.timer >/dev/null 2>&1 || true
+  echo "Staged installation complete; services were not started."
+else
+  systemctl enable --now whatsnotify-update.timer
+  systemctl restart whatsnotify.service || true
+  sleep 2
+  systemctl --no-pager --full status whatsnotify.service || true
+  systemctl --no-pager list-timers whatsnotify-update.timer || true
+fi
 
 cat <<EOF
 Installation complete.
