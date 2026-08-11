@@ -1,0 +1,1 @@
+whatsnotify ALL=(root) NOPASSWD: /usr/bin/systemctl start whatsnotify-update-manual.service

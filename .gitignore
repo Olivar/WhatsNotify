@@ -1,0 +1,15 @@
+node_modules/
+.env
+.env.local
+*.local
+.wwebjs_auth/
+.wwebjs_cache/
+sessions/
+data/
+storage/
+logs/
+backups/
+*.log
+*.bak*
+coverage/
+.DS_Store

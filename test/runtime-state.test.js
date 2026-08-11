@@ -1,0 +1,8 @@
+'use strict';
+const test=require('node:test'); const assert=require('node:assert/strict'); const {createRuntimeState,maskId}=require('../lib/runtime-state');
+function runtime(){return createRuntimeState({version:'1.1.0',sourceChatId:'271502834421837@lid',targetGroupId:'555181570245-1449825290@g.us',sessionId:'proditec-forwarder',webVersion:'2.3000.test',webCachePath:'/tmp/cache'});}
+test('WhatsApp não configurado fica explicitamente false',()=>{const r=createRuntimeState({version:'1',sourceChatId:null,targetGroupId:null});assert.equal(r.snapshot().whatsapp.configured,false);});
+test('WhatsApp conectado torna sender online',()=>{const r=runtime();r.state.webCache.present=true;r.state.time.status='synced';r.setWhatsapp('connected',{lastConnection:new Date().toISOString()});const s=r.snapshot();assert.equal(s.whatsapp.status,'connected');assert.equal(s.senders[0].status,'online');assert.equal(s.service.status,'online');});
+test('sender ativo/inativo é refletido',()=>{const r=runtime();r.state.senders.whatsapp.active=false;assert.equal(r.snapshot().senders[0].active,false);});
+test('automação ativa/inativa e falha são refletidas',()=>{const r=runtime();r.state.automations.soapDaily.active=false;assert.equal(r.snapshot().automations.find(a=>a.id==='senha-master-diaria').active,false);r.state.automations.soapDaily.active=true;r.automationStart('soapDaily');r.automationFailure('soapDaily',new Error('falha teste'));const a=r.snapshot().automations.find(a=>a.id==='senha-master-diaria');assert.equal(a.failures,1);assert.equal(a.status,'error');});
+test('IDs são mascarados',()=>{assert.equal(maskId('555181570245-1449825290@g.us').includes('555181570245-1449825290'),false);});

@@ -1,0 +1,12 @@
+[Unit]
+Description=Poll WhatsNotify repository for updates
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=60s
+AccuracySec=10s
+Persistent=true
+Unit=whatsnotify-update.service
+
+[Install]
+WantedBy=timers.target
