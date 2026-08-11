@@ -26,7 +26,11 @@ getent group whatsnotify >/dev/null || groupadd --system whatsnotify
 id whatsnotify >/dev/null 2>&1 || useradd --system --gid whatsnotify --home-dir /var/lib/whatsnotify --shell /usr/sbin/nologin whatsnotify
 
 install -d -o root -g whatsnotify -m 0750 /etc/whatsnotify
-install -d -o whatsnotify -g whatsnotify -m 0700 /var/lib/whatsnotify /var/lib/whatsnotify/sessions /var/lib/whatsnotify/web-cache
+install -d -o whatsnotify -g whatsnotify -m 0700 \
+  /var/lib/whatsnotify \
+  /var/lib/whatsnotify/sessions \
+  /var/lib/whatsnotify/web-cache \
+  /var/lib/whatsnotify/puppeteer-cache
 install -d -o root -g whatsnotify -m 0750 /var/log/whatsnotify
 
 ENV=/etc/whatsnotify/whatsnotify.env
@@ -40,8 +44,14 @@ else
   echo "Preserved existing $ENV"
 fi
 
+set -a
+source "$ENV"
+set +a
+export PUPPETEER_CACHE_DIR="${PUPPETEER_CACHE_DIR:-/var/lib/whatsnotify/puppeteer-cache}"
+
 cd "$APP_DIR"
 if [[ -f package-lock.json ]]; then npm ci --omit=dev; else npm install --omit=dev; fi
+chown -R whatsnotify:whatsnotify "$PUPPETEER_CACHE_DIR"
 
 chown -R root:whatsnotify "$APP_DIR"
 find "$APP_DIR" -type d -exec chmod 0755 {} +
