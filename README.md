@@ -1,30 +1,96 @@
 # WhatsNotify
 
-WhatsNotify encaminha alertas do WhatsApp, executa automações agendadas e expõe um dashboard administrativo. O deploy oficial usa Git e `systemd`.
+WhatsNotify encaminha alertas do WhatsApp, executa automações agendadas e expõe um dashboard administrativo. O deploy oficial usa Git + systemd.
 
-## Repositório oficial
+## Instalação / migração em um comando
 
-```text
-https://github.com/Olivar/WhatsNotify
-branch: main
-```
-
-## Instalação
-
-Pré-requisitos: Linux com `systemd`, Git, Node.js >= 18, npm e dependências do Puppeteer/Chromium.
+No Ubuntu/Debian, execute como root:
 
 ```bash
-sudo -i
-cd /opt
-git clone https://github.com/Olivar/WhatsNotify.git WhatsNotify
-cd WhatsNotify
-./install.sh
-nano /etc/whatsnotify/whatsnotify.env
-systemctl restart whatsnotify
-journalctl -u whatsnotify -f
+bash <(curl -fsSL https://raw.githubusercontent.com/Olivar/WhatsNotify/main/whatsnotify.sh) install
 ```
 
-O instalador é idempotente e preserva `/etc/whatsnotify/whatsnotify.env` e `/var/lib/whatsnotify`.
+O mesmo comando detecta automaticamente uma instalação legada em `/opt/whatsapp-forwarder` e migra:
+
+- `/etc/default/whatsapp-forwarder` para `/etc/whatsnotify/whatsnotify.env`;
+- sessão `.wwebjs_auth` para `/var/lib/whatsnotify/sessions`;
+- cache WhatsApp Web para `/var/lib/whatsnotify/web-cache`;
+- cache Puppeteer para `/var/lib/whatsnotify/puppeteer-cache`;
+- serviço antigo `whatsapp-forwarder.service` para `whatsnotify.service` somente após health check bem-sucedido.
+
+O instalador também:
+
+- instala Git, curl, Python, util-linux e bibliotecas do Chromium;
+- instala Node.js 24 se Node.js >=18 não existir;
+- clona o repositório em `/opt/WhatsNotify`;
+- cria usuário de serviço e diretórios persistentes;
+- preserva configurações existentes;
+- gera senha administrativa inicial quando necessário;
+- instala dependências npm/Puppeteer;
+- instala e habilita units systemd;
+- ativa auto-update;
+- valida `/api/health`;
+- reativa automaticamente o serviço legado se a migração falhar.
+
+## Operação
+
+Toda administração usa o mesmo script:
+
+```bash
+cd /opt/WhatsNotify
+
+./whatsnotify.sh status
+./whatsnotify.sh check
+./whatsnotify.sh update
+./whatsnotify.sh rollback
+./whatsnotify.sh repair
+```
+
+`install.sh` e `update.sh` existem apenas como wrappers de compatibilidade; a lógica operacional está integralmente em `whatsnotify.sh`.
+
+## Atualização automática
+
+O `systemd` executa:
+
+```text
+/opt/WhatsNotify/whatsnotify.sh auto
+```
+
+Configuração:
+
+```env
+AUTO_UPDATE_ENABLED=true
+AUTO_UPDATE_INTERVAL=300
+AUTO_UPDATE_BRANCH=main
+AUTO_UPDATE_REMOTE=origin
+```
+
+Fluxo de update:
+
+```text
+lock
+> valida working tree
+> git fetch
+> valida fast-forward
+> registra commit anterior
+> aplica origin/main
+> npm ci/install
+> reaplica systemd
+> executa scripts/upgrade.sh
+> reinicia serviço
+> health check
+> confirma atualização
+```
+
+Se qualquer etapa falhar após a troca de commit:
+
+```text
+rollback para previousCommit
+> restaura dependências
+> reaplica systemd
+> reinicia serviço
+> registra rolled_back
+```
 
 ## Persistência
 
@@ -34,6 +100,7 @@ O instalador é idempotente e preserva `/etc/whatsnotify/whatsnotify.env` e `/va
 | Configuração | `/etc/whatsnotify/whatsnotify.env` |
 | Sessão WhatsApp | `/var/lib/whatsnotify/sessions` |
 | Web cache | `/var/lib/whatsnotify/web-cache` |
+| Cache Puppeteer | `/var/lib/whatsnotify/puppeteer-cache` |
 | Estado de update | `/var/lib/whatsnotify/update-state.json` |
 | Log de update | `/var/log/whatsnotify/update.log` |
 | Runtime logs | journald |
@@ -42,55 +109,13 @@ O instalador é idempotente e preserva `/etc/whatsnotify/whatsnotify.env` e `/va
 
 ```bash
 systemctl status whatsnotify
-systemctl start whatsnotify
-systemctl stop whatsnotify
 systemctl restart whatsnotify
 journalctl -u whatsnotify -f
 ```
 
-## Atualização
-
-```bash
-cd /opt/WhatsNotify
-./update.sh --check
-./update.sh
-```
-
-Fluxo: lock > valida worktree > fetch > valida fast-forward > registra SHA anterior > aplica `origin/main` > dependências > `scripts/upgrade.sh` > restart > `/api/health` > confirma. Falha aciona rollback para o SHA anterior.
-
-### Auto-update
-
-```env
-AUTO_UPDATE_ENABLED=true
-AUTO_UPDATE_INTERVAL=300
-AUTO_UPDATE_BRANCH=main
-AUTO_UPDATE_REMOTE=origin
-```
-
-O timer acorda a cada minuto e `update.sh --auto` respeita `AUTO_UPDATE_INTERVAL`.
-
-```bash
-systemctl status whatsnotify-update.timer
-systemctl list-timers whatsnotify-update.timer
-```
-
-Desabilitar:
-
-```bash
-sed -i 's/^AUTO_UPDATE_ENABLED=.*/AUTO_UPDATE_ENABLED=false/' /etc/whatsnotify/whatsnotify.env
-systemctl disable --now whatsnotify-update.timer
-```
-
-Habilitar:
-
-```bash
-sed -i 's/^AUTO_UPDATE_ENABLED=.*/AUTO_UPDATE_ENABLED=true/' /etc/whatsnotify/whatsnotify.env
-systemctl enable --now whatsnotify-update.timer
-```
-
 ## Dashboard
 
-Por padrão: `127.0.0.1:8080`, protegido por Basic Auth.
+Por padrão o dashboard escuta em `127.0.0.1:8080` e usa Basic Auth.
 
 ```bash
 ssh -L 8080:127.0.0.1:8080 servidor
@@ -102,11 +127,11 @@ Health check local:
 curl -fsS http://127.0.0.1:8080/api/health
 ```
 
-A ação **Atualizar agora** somente é habilitada com `DASHBOARD_ALLOW_UPDATE=true`; ela inicia exclusivamente a unidade fixa `whatsnotify-update-manual.service`.
+A ação de atualização pelo dashboard somente funciona quando `DASHBOARD_ALLOW_UPDATE=true` e inicia exclusivamente `whatsnotify-update-manual.service`.
 
 ## NTP
 
-O app mede offset contra `a.ntp.br,b.ntp.br,c.ntp.br`, mas não altera o relógio. Em LXC, sincronize o host Proxmox via chrony; não conceda `CAP_SYS_TIME` ao container.
+O app monitora `a.ntp.br,b.ntp.br,c.ntp.br` e não altera diretamente o relógio. Em LXC, a sincronização real deve permanecer no host Proxmox/chrony; não conceda `CAP_SYS_TIME` ao container.
 
 ## Testes
 
@@ -116,7 +141,9 @@ npm test
 
 ## Segurança
 
-- `.env`, sessões, caches e dados persistentes ficam fora do Git.
-- O updater rejeita worktree rastreada suja e update não-fast-forward.
-- O repositório público não exige token para clone/fetch.
-- O dashboard deve permanecer em localhost ou atrás de TLS.
+- Configuração, sessão e caches ficam fora do Git.
+- Updater rejeita worktree rastreada suja e atualização não-fast-forward.
+- Update usa lock exclusivo.
+- Falhas após troca de versão acionam rollback.
+- Repositório público não exige token para clone/fetch.
+- Dashboard deve permanecer em localhost ou atrás de TLS.
